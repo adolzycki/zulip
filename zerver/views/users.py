@@ -2,6 +2,7 @@ from email.headerregistry import Address
 from typing import Any, Dict, List, Mapping, Optional, Union
 
 from django.conf import settings
+from django.contrib.auth import update_session_auth_hash
 from django.contrib.auth.models import AnonymousUser
 from django.core.files.uploadedfile import UploadedFile
 from django.http import HttpRequest, HttpResponse
@@ -23,7 +24,7 @@ from zerver.actions.user_settings import (
     check_change_bot_full_name,
     check_change_full_name,
     do_change_avatar_fields,
-    do_regenerate_api_key,
+    do_regenerate_api_key, do_change_password,
 )
 from zerver.actions.users import (
     do_change_user_role,
@@ -97,7 +98,7 @@ from zerver.models import (
     get_user_including_cross_realm,
     get_user_profile_by_id_in_realm,
 )
-from zproject.backends import check_password_strength
+from zproject.backends import check_password_strength, email_belongs_to_ldap
 
 
 def check_last_owner(user_profile: UserProfile) -> bool:
@@ -219,6 +220,7 @@ def update_user_backend(
         default=None,
         json_validator=check_profile_data,
     ),
+    new_password: Optional[str] = REQ(default=None)
 ) -> HttpResponse:
     target = access_user_by_id(
         user_profile, user_id, allow_deactivated=True, allow_bots=True, for_admin=True
@@ -262,6 +264,29 @@ def update_user_backend(
                 )
         validate_user_custom_profile_data(target.realm.id, clean_profile_data)
         do_update_user_custom_profile_data_if_changed(target, clean_profile_data)
+
+    if new_password is not None:
+        if email_belongs_to_ldap(user_profile.realm, user_profile.delivery_email):
+            raise JsonableError(_("Your Zulip password is managed in LDAP"))
+
+        if not check_password_strength(new_password):
+            raise JsonableError(_("New password is too weak!"))
+
+        do_change_password(user_profile, new_password)
+        # Password changes invalidates sessions, see
+        # https://docs.djangoproject.com/en/3.2/topics/auth/default/#session-invalidation-on-password-change
+        # for details. To avoid this logging the user out of their own
+        # session (which would provide a confusing UX at best), we
+        # update the session hash here.
+        update_session_auth_hash(request, user_profile)
+        # We also save the session to the DB immediately to mitigate
+        # race conditions. In theory, there is still a race condition
+        # and to completely avoid it we will have to use some kind of
+        # mutex lock in `django.contrib.auth.get_user` where session
+        # is verified. To make that lock work we will have to control
+        # the AuthenticationMiddleware which is currently controlled
+        # by Django,
+        request.session.save()
 
     return json_success(request)
 
