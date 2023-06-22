@@ -266,19 +266,19 @@ def update_user_backend(
         do_update_user_custom_profile_data_if_changed(target, clean_profile_data)
 
     if new_password is not None:
-        if email_belongs_to_ldap(user_profile.realm, user_profile.delivery_email):
+        if email_belongs_to_ldap(target.realm, target.delivery_email):
             raise JsonableError(_("Your Zulip password is managed in LDAP"))
 
         if not check_password_strength(new_password):
             raise JsonableError(_("New password is too weak!"))
 
-        do_change_password(user_profile, new_password)
+        do_change_password(target, new_password)
         # Password changes invalidates sessions, see
         # https://docs.djangoproject.com/en/3.2/topics/auth/default/#session-invalidation-on-password-change
         # for details. To avoid this logging the user out of their own
         # session (which would provide a confusing UX at best), we
         # update the session hash here.
-        update_session_auth_hash(request, user_profile)
+        update_session_auth_hash(request, target)
         # We also save the session to the DB immediately to mitigate
         # race conditions. In theory, there is still a race condition
         # and to completely avoid it we will have to use some kind of
