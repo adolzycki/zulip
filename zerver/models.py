@@ -2210,7 +2210,7 @@ class UserProfile(AbstractBaseUser, PermissionsMixin, UserBaseSettings):  # type
         else:
             return -1
 
-    def format_requestor_for_logs(self) -> str:
+    def format_requester_for_logs(self) -> str:
         return "{}@{}".format(self.id, self.realm.string_id or "root")
 
     def set_password(self, password: Optional[str]) -> None:
@@ -3475,11 +3475,11 @@ class UserMessage(AbstractUserMessage):
         the row locks acquired by a bulk update operation to modify
         message flags using bitand/bitor.
 
-        This consistent ordering is important to prevent to prevent
-        deadlocks when 2 or more bulk updates to the same rows in the
-        UserMessage table race against each other (For example, if a
-        client submits simultaneous duplicate API requests to mark a
-        certain set of messages as read).
+        This consistent ordering is important to prevent deadlocks when
+        2 or more bulk updates to the same rows in the UserMessage table
+        race against each other (For example, if a client submits
+        simultaneous duplicate API requests to mark a certain set of
+        messages as read).
         """
         return UserMessage.objects.select_for_update().order_by("message_id")
 
